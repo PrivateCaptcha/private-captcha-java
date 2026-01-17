@@ -406,7 +406,7 @@ public class PrivateCaptchaClient {
         // Find the closing quote (handling escaped quotes)
         int closeQuote = -1;
         for (int i = openQuote + 1; i < json.length(); i++) {
-            if (json.charAt(i) == '"' && json.charAt(i - 1) != '\\') {
+            if (json.charAt(i) == '"' && (i == 0 || json.charAt(i - 1) != '\\')) {
                 closeQuote = i;
                 break;
             }
