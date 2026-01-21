@@ -1,6 +1,7 @@
 package com.privatecaptcha;
 
 import java.net.HttpURLConnection;
+import java.time.Duration;
 
 /**
  * Configuration options for the Private Captcha client.
@@ -11,8 +12,8 @@ public class PrivateCaptchaConfiguration {
     private String apiKey;
     private String formField;
     private int failedStatusCode;
-    private int connectTimeoutMillis;
-    private int readTimeoutMillis;
+    private Duration connectTimeout;
+    private Duration readTimeout;
 
     /**
      * Creates a new configuration with default values.
@@ -22,8 +23,8 @@ public class PrivateCaptchaConfiguration {
         this.apiKey = "";
         this.formField = Constants.DEFAULT_FORM_FIELD;
         this.failedStatusCode = HttpURLConnection.HTTP_FORBIDDEN;
-        this.connectTimeoutMillis = 10000; // 10 seconds
-        this.readTimeoutMillis = 30000;    // 30 seconds
+        this.connectTimeout = Duration.ofSeconds(10);
+        this.readTimeout = Duration.ofSeconds(30);
     }
 
     /**
@@ -109,42 +110,42 @@ public class PrivateCaptchaConfiguration {
     }
 
     /**
-     * Gets the connection timeout in milliseconds.
+     * Gets the connection timeout.
      *
-     * @return the connection timeout (default: 10000ms)
+     * @return the connection timeout (default: 10 seconds)
      */
-    public int getConnectTimeoutMillis() {
-        return connectTimeoutMillis;
+    public Duration getConnectTimeout() {
+        return connectTimeout;
     }
 
     /**
-     * Sets the connection timeout in milliseconds.
+     * Sets the connection timeout.
      *
-     * @param connectTimeoutMillis the connection timeout
+     * @param connectTimeout the connection timeout
      * @return this instance for method chaining
      */
-    public PrivateCaptchaConfiguration setConnectTimeoutMillis(int connectTimeoutMillis) {
-        this.connectTimeoutMillis = connectTimeoutMillis;
+    public PrivateCaptchaConfiguration setConnectTimeout(Duration connectTimeout) {
+        this.connectTimeout = connectTimeout;
         return this;
     }
 
     /**
-     * Gets the read timeout in milliseconds.
+     * Gets the read timeout.
      *
-     * @return the read timeout (default: 30000ms)
+     * @return the read timeout (default: 30 seconds)
      */
-    public int getReadTimeoutMillis() {
-        return readTimeoutMillis;
+    public Duration getReadTimeout() {
+        return readTimeout;
     }
 
     /**
-     * Sets the read timeout in milliseconds.
+     * Sets the read timeout.
      *
-     * @param readTimeoutMillis the read timeout
+     * @param readTimeout the read timeout
      * @return this instance for method chaining
      */
-    public PrivateCaptchaConfiguration setReadTimeoutMillis(int readTimeoutMillis) {
-        this.readTimeoutMillis = readTimeoutMillis;
+    public PrivateCaptchaConfiguration setReadTimeout(Duration readTimeout) {
+        this.readTimeout = readTimeout;
         return this;
     }
 }

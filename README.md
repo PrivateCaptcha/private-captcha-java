@@ -7,7 +7,6 @@ Official Java client for the [Private Captcha](https://privatecaptcha.com) API.
 ## Requirements
 
 - Java 8 or higher
-- No external dependencies required
 
 ## Installation
 
@@ -19,7 +18,7 @@ Add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>com.privatecaptcha</groupId>
     <artifactId>private-captcha-java</artifactId>
-    <version>0.0.5</version>
+    <version>0.0.1</version>
 </dependency>
 ```
 
@@ -28,7 +27,7 @@ Add the following dependency to your `pom.xml`:
 Add the following to your `build.gradle`:
 
 ```groovy
-implementation 'com.privatecaptcha:private-captcha-java:0.0.5'
+implementation 'com.privatecaptcha:private-captcha-java:0.0.1'
 ```
 
 ### Manual Installation
@@ -40,29 +39,23 @@ Download the JAR file from the [releases page](https://github.com/PrivateCaptcha
 ```java
 import com.privatecaptcha.*;
 
-// Create a client with your API key
 PrivateCaptchaClient client = new PrivateCaptchaClient(
     new PrivateCaptchaConfiguration()
         .setApiKey("pc_your_api_key")
 );
 
-// Verify a captcha solution
 try {
     VerifyOutput output = client.verify(new VerifyInput()
         .setSolution(solution));
     
     if (output.ok()) {
-        // Captcha verified successfully
         System.out.println("Verification successful!");
     } else {
-        // Verification failed
         System.out.println("Verification failed: " + output.getErrorMessage());
     }
 } catch (PrivateCaptchaHttpException e) {
-    // HTTP error from the API
     System.err.println("HTTP error: " + e.getStatusCode());
 } catch (VerificationFailedException e) {
-    // Verification failed after all retry attempts
     System.err.println("Verification failed after " + e.getAttempts() + " attempts");
 }
 ```
@@ -70,24 +63,15 @@ try {
 ## Configuration Options
 
 ```java
+import java.time.Duration;
+
 PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration()
-    // Required: Your API key from Private Captcha account settings
     .setApiKey("pc_your_api_key")
-    
-    // Optional: Custom domain for self-hosted instances
-    .setDomain(Domains.GLOBAL)  // or Domains.EU for EU region
-    
-    // Optional: Form field name to read captcha solution from
+    .setDomain(Domains.GLOBAL)
     .setFormField("private-captcha-solution")
-    
-    // Optional: HTTP status code to return for failed verifications
     .setFailedStatusCode(403)
-    
-    // Optional: Connection timeout in milliseconds
-    .setConnectTimeoutMillis(10000)
-    
-    // Optional: Read timeout in milliseconds
-    .setReadTimeoutMillis(30000);
+    .setConnectTimeout(Duration.ofSeconds(10))
+    .setReadTimeout(Duration.ofSeconds(30));
 
 PrivateCaptchaClient client = new PrivateCaptchaClient(config);
 ```
@@ -96,16 +80,9 @@ PrivateCaptchaClient client = new PrivateCaptchaClient(config);
 
 ```java
 VerifyInput input = new VerifyInput()
-    // Required: The captcha solution from the client
     .setSolution(solution)
-    
-    // Optional: Sitekey to verify solution against
     .setSitekey("your-sitekey")
-    
-    // Optional: Maximum backoff time in seconds (default: 20)
     .setMaxBackoffSeconds(20)
-    
-    // Optional: Maximum retry attempts (default: 5)
     .setMaxAttempts(5);
 
 VerifyOutput output = client.verify(input);
@@ -116,28 +93,20 @@ VerifyOutput output = client.verify(input);
 ```java
 VerifyOutput output = client.verify(input);
 
-// Check if verification was fully successful
 if (output.ok()) {
-    // Success - captcha verified
+    // Success
 }
 
-// Check individual fields
-boolean success = output.isSuccess();      // API reported success
-VerifyCode code = output.getCode();        // Verification code
-String error = output.getErrorMessage();   // Error message if any
-String origin = output.getOrigin();        // Request origin
-String timestamp = output.getTimestamp();  // Verification timestamp
-String traceId = output.getTraceId();      // Trace ID for debugging
-int attempts = output.getAttempts();       // Number of attempts made
+boolean success = output.isSuccess();
+VerifyCode code = output.getCode();
+String error = output.getErrorMessage();
+String origin = output.getOrigin();
+String timestamp = output.getTimestamp();
+String traceId = output.getTraceId();
+int attempts = output.getAttempts();
 ```
 
 ## Error Handling
-
-The client uses three exception types:
-
-- `IllegalArgumentException` - Invalid input (empty API key, empty solution)
-- `PrivateCaptchaHttpException` - Non-retriable HTTP errors from the API
-- `VerificationFailedException` - Verification failed after all retry attempts
 
 ```java
 try {
@@ -160,10 +129,7 @@ try {
 The client automatically retries on:
 - Network errors (connection timeouts, unknown hosts)
 - HTTP 429 (Too Many Requests)
-- HTTP 500 (Internal Server Error)
-- HTTP 502 (Bad Gateway)
-- HTTP 503 (Service Unavailable)
-- HTTP 504 (Gateway Timeout)
+- HTTP 500, 502, 503, 504 (Server errors)
 - HTTP 408 (Request Timeout)
 
 Non-retriable errors (e.g., 400, 401, 403) are thrown immediately.
@@ -186,13 +152,8 @@ public class FormServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) 
             throws ServletException, IOException {
-        
-        String solution = request.getParameter(captchaClient.getFormField());
-        
         try {
-            VerifyOutput output = captchaClient.verify(
-                new VerifyInput().setSolution(solution)
-            );
+            VerifyOutput output = captchaClient.verifyRequest(request::getParameter);
             
             if (!output.ok()) {
                 response.sendError(captchaClient.getFailedStatusCode(), 
@@ -214,11 +175,8 @@ public class FormServlet extends HttpServlet {
 ## Building from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/PrivateCaptcha/private-captcha-java.git
 cd private-captcha-java
-
-# Build
 mvn clean package
 
 # Run tests (requires PC_API_KEY environment variable for integration tests)
@@ -264,25 +222,9 @@ Add to your `~/.m2/settings.xml`:
 ### Publishing
 
 ```bash
-# Deploy a snapshot version
-mvn clean deploy
-
-# Deploy a release version
 mvn clean deploy -P release
-
-# For automated releases, use the nexus-staging-maven-plugin
 mvn nexus-staging:release
 ```
-
-### GitHub Actions Publishing
-
-Add the following secrets to your repository:
-- `MAVEN_USERNAME` - Sonatype OSSRH username
-- `MAVEN_PASSWORD` - Sonatype OSSRH password
-- `GPG_PRIVATE_KEY` - GPG private key (armor format)
-- `GPG_PASSPHRASE` - GPG passphrase
-
-Then create a release workflow or use the manual publish process.
 
 ## License
 

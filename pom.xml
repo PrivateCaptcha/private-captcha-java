@@ -6,7 +6,7 @@
 
     <groupId>com.privatecaptcha</groupId>
     <artifactId>private-captcha-java</artifactId>
-    <version>0.0.5</version>
+    <version>0.0.1</version>
     <packaging>jar</packaging>
 
     <name>Private Captcha Java Client</name>
@@ -39,10 +39,16 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <junit.version>4.13.2</junit.version>
+        <gson.version>2.10.1</gson.version>
     </properties>
 
     <dependencies>
-        <!-- Test dependencies only -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

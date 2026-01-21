@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 
 import static org.junit.Assert.*;
@@ -22,13 +23,8 @@ public class PrivateCaptchaClientTest {
     private static final int SOLUTIONS_COUNT = 16;
     private static final int SOLUTION_LENGTH = 8;
 
-    // Test puzzle is cached to avoid hitting the API multiple times
     private static String testPuzzle;
 
-    /**
-     * Fetches a test puzzle from the API.
-     * This is cached across test runs for efficiency.
-     */
     private static synchronized String fetchTestPuzzle() throws Exception {
         if (testPuzzle != null) {
             return testPuzzle;
@@ -56,9 +52,6 @@ public class PrivateCaptchaClientTest {
         }
     }
 
-    /**
-     * Gets the API key from environment, or returns null to skip the test.
-     */
     private static String getApiKey() {
         String apiKey = System.getenv("PC_API_KEY");
         if (apiKey == null || apiKey.isEmpty()) {
@@ -80,7 +73,6 @@ public class PrivateCaptchaClientTest {
                 new PrivateCaptchaConfiguration().setApiKey(apiKey)
         );
 
-        // Create empty solutions (for test property)
         byte[] emptySolutions = new byte[SOLUTIONS_COUNT * SOLUTION_LENGTH];
         String solutionsStr = Base64.getEncoder().encodeToString(emptySolutions);
         String payload = solutionsStr + "." + puzzle;
@@ -105,7 +97,6 @@ public class PrivateCaptchaClientTest {
                 new PrivateCaptchaConfiguration().setApiKey(apiKey)
         );
 
-        // Use only half the required solutions to get an error
         byte[] emptySolutions = new byte[(SOLUTIONS_COUNT * SOLUTION_LENGTH) / 2];
         String solutionsStr = Base64.getEncoder().encodeToString(emptySolutions);
         String payload = solutionsStr + "." + puzzle;
@@ -138,8 +129,8 @@ public class PrivateCaptchaClientTest {
                 new PrivateCaptchaConfiguration()
                         .setApiKey("test-key")
                         .setDomain("does-not-exist.qwerty12345-asdfjkl.net")
-                        .setConnectTimeoutMillis(1000)
-                        .setReadTimeoutMillis(1000)
+                        .setConnectTimeout(Duration.ofSeconds(1))
+                        .setReadTimeout(Duration.ofSeconds(1))
         );
 
         VerifyInput input = new VerifyInput()
@@ -178,7 +169,7 @@ public class PrivateCaptchaClientTest {
 
     @Test
     public void testCustomFailedStatusCode() {
-        int customStatusCode = 418; // I'm a teapot
+        int customStatusCode = 418;
         PrivateCaptchaClient client = new PrivateCaptchaClient(
                 new PrivateCaptchaConfiguration()
                         .setApiKey("test-key")
@@ -199,7 +190,6 @@ public class PrivateCaptchaClientTest {
 
     @Test
     public void testDomainNormalization() {
-        // Test with https prefix
         PrivateCaptchaClient client1 = new PrivateCaptchaClient(
                 new PrivateCaptchaConfiguration()
                         .setApiKey("test-key")
@@ -207,7 +197,6 @@ public class PrivateCaptchaClientTest {
         );
         assertNotNull(client1);
 
-        // Test with http prefix
         PrivateCaptchaClient client2 = new PrivateCaptchaClient(
                 new PrivateCaptchaConfiguration()
                         .setApiKey("test-key")
@@ -215,7 +204,6 @@ public class PrivateCaptchaClientTest {
         );
         assertNotNull(client2);
 
-        // Test with trailing slashes
         PrivateCaptchaClient client3 = new PrivateCaptchaClient(
                 new PrivateCaptchaConfiguration()
                         .setApiKey("test-key")
@@ -226,7 +214,6 @@ public class PrivateCaptchaClientTest {
 
     @Test
     public void testVerifyCodeEnum() {
-        // Test fromCode for all known codes
         assertEquals(VerifyCode.NO_ERROR, VerifyCode.fromCode(0));
         assertEquals(VerifyCode.ERROR_OTHER, VerifyCode.fromCode(1));
         assertEquals(VerifyCode.DUPLICATE_SOLUTIONS, VerifyCode.fromCode(2));
@@ -241,7 +228,6 @@ public class PrivateCaptchaClientTest {
         assertEquals(VerifyCode.INTEGRITY, VerifyCode.fromCode(11));
         assertEquals(VerifyCode.ORG_SCOPE, VerifyCode.fromCode(12));
 
-        // Test unknown code falls back to ERROR_OTHER
         assertEquals(VerifyCode.ERROR_OTHER, VerifyCode.fromCode(999));
     }
 
@@ -266,7 +252,6 @@ public class PrivateCaptchaClientTest {
     public void testVerifyOutput() {
         VerifyOutput output = new VerifyOutput();
 
-        // Default state
         assertFalse(output.isSuccess());
         assertFalse(output.ok());
         assertEquals(VerifyCode.NO_ERROR, output.getCode());
@@ -275,30 +260,28 @@ public class PrivateCaptchaClientTest {
         assertEquals("", output.getTraceId());
         assertEquals(0, output.getAttempts());
 
-        // Test ok() returns true only when success is true AND code is NO_ERROR
-        output.setSuccess(true);
-        output.setCode(VerifyCode.NO_ERROR);
-        assertTrue(output.ok());
+        VerifyOutput successOutput = new VerifyOutput(true, VerifyCode.NO_ERROR, "origin", "timestamp", "trace", 1);
+        assertTrue(successOutput.ok());
+        assertTrue(successOutput.isSuccess());
+        assertEquals("origin", successOutput.getOrigin());
+        assertEquals("timestamp", successOutput.getTimestamp());
+        assertEquals("trace", successOutput.getTraceId());
+        assertEquals(1, successOutput.getAttempts());
 
-        // Test ok() returns false when success but code indicates error
-        output.setCode(VerifyCode.TEST_PROPERTY);
-        assertFalse(output.ok());
-
-        // Test getErrorMessage
-        assertEquals("property-test", output.getErrorMessage());
+        VerifyOutput testPropertyOutput = new VerifyOutput(true, VerifyCode.TEST_PROPERTY, "", "", "", 0);
+        assertFalse(testPropertyOutput.ok());
+        assertEquals("property-test", testPropertyOutput.getErrorMessage());
     }
 
     @Test
     public void testVerifyInput() {
         VerifyInput input = new VerifyInput();
 
-        // Test defaults
         assertEquals("", input.getSolution());
         assertEquals("", input.getSitekey());
         assertEquals(20, input.getMaxBackoffSeconds());
         assertEquals(5, input.getMaxAttempts());
 
-        // Test setters return this for chaining
         VerifyInput same = input
                 .setSolution("solution")
                 .setSitekey("sitekey")
@@ -316,30 +299,28 @@ public class PrivateCaptchaClientTest {
     public void testPrivateCaptchaConfiguration() {
         PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration();
 
-        // Test defaults
         assertEquals(Domains.GLOBAL, config.getDomain());
         assertEquals("", config.getApiKey());
         assertEquals("private-captcha-solution", config.getFormField());
         assertEquals(403, config.getFailedStatusCode());
-        assertEquals(10000, config.getConnectTimeoutMillis());
-        assertEquals(30000, config.getReadTimeoutMillis());
+        assertEquals(Duration.ofSeconds(10), config.getConnectTimeout());
+        assertEquals(Duration.ofSeconds(30), config.getReadTimeout());
 
-        // Test setters return this for chaining
         PrivateCaptchaConfiguration same = config
                 .setDomain("example.com")
                 .setApiKey("key")
                 .setFormField("field")
                 .setFailedStatusCode(401)
-                .setConnectTimeoutMillis(5000)
-                .setReadTimeoutMillis(15000);
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(15));
 
         assertSame(config, same);
         assertEquals("example.com", config.getDomain());
         assertEquals("key", config.getApiKey());
         assertEquals("field", config.getFormField());
         assertEquals(401, config.getFailedStatusCode());
-        assertEquals(5000, config.getConnectTimeoutMillis());
-        assertEquals(15000, config.getReadTimeoutMillis());
+        assertEquals(Duration.ofSeconds(5), config.getConnectTimeout());
+        assertEquals(Duration.ofSeconds(15), config.getReadTimeout());
     }
 
     @Test
@@ -370,5 +351,30 @@ public class PrivateCaptchaClientTest {
         assertEquals(5, ex.getAttempts());
         assertEquals("Captcha verification failed after 5 attempts", ex.getMessage());
         assertSame(cause, ex.getCause());
+    }
+
+    @Test
+    public void testVerifyRequest() throws Exception {
+        PrivateCaptchaClient client = new PrivateCaptchaClient(
+                new PrivateCaptchaConfiguration()
+                        .setApiKey("test-key")
+                        .setFormField("my-field")
+        );
+
+        try {
+            client.verifyRequest(name -> null);
+            fail("Expected IllegalArgumentException for null solution");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("empty"));
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testVerifyRequestNullExtractor() throws Exception {
+        PrivateCaptchaClient client = new PrivateCaptchaClient(
+                new PrivateCaptchaConfiguration().setApiKey("test-key")
+        );
+
+        client.verifyRequest(null);
     }
 }

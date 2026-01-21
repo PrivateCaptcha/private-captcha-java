@@ -5,23 +5,44 @@ package com.privatecaptcha;
  */
 public class VerifyOutput {
 
-    private boolean success;
-    private VerifyCode code;
-    private String origin;
-    private String timestamp;
-    private String traceId;
-    private int attempts;
+    private final boolean success;
+    private final VerifyCode code;
+    private final String origin;
+    private final String timestamp;
+    private final String traceId;
+    private final int attempts;
 
     /**
-     * Creates a new VerifyOutput with default values.
+     * Creates a new VerifyOutput with default values (for error cases).
      */
-    public VerifyOutput() {
-        this.success = false;
-        this.code = VerifyCode.NO_ERROR;
-        this.origin = "";
-        this.timestamp = "";
-        this.traceId = "";
-        this.attempts = 0;
+    VerifyOutput() {
+        this(false, VerifyCode.NO_ERROR, "", "", "", 0);
+    }
+
+    /**
+     * Creates a new VerifyOutput with the specified values.
+     */
+    VerifyOutput(boolean success, VerifyCode code, String origin, String timestamp, String traceId, int attempts) {
+        this.success = success;
+        this.code = code;
+        this.origin = origin != null ? origin : "";
+        this.timestamp = timestamp != null ? timestamp : "";
+        this.traceId = traceId != null ? traceId : "";
+        this.attempts = attempts;
+    }
+
+    /**
+     * Creates a copy with updated attempts count.
+     */
+    VerifyOutput withAttempts(int attempts) {
+        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, this.traceId, attempts);
+    }
+
+    /**
+     * Creates a copy with updated traceId.
+     */
+    VerifyOutput withTraceId(String traceId) {
+        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, traceId, this.attempts);
     }
 
     /**
@@ -44,30 +65,12 @@ public class VerifyOutput {
     }
 
     /**
-     * Sets the success flag.
-     *
-     * @param success the success value
-     */
-    void setSuccess(boolean success) {
-        this.success = success;
-    }
-
-    /**
      * Returns the verification result code.
      *
      * @return the verify code
      */
     public VerifyCode getCode() {
         return code;
-    }
-
-    /**
-     * Sets the verification result code.
-     *
-     * @param code the verify code
-     */
-    void setCode(VerifyCode code) {
-        this.code = code;
     }
 
     /**
@@ -80,30 +83,12 @@ public class VerifyOutput {
     }
 
     /**
-     * Sets the origin.
-     *
-     * @param origin the origin string
-     */
-    void setOrigin(String origin) {
-        this.origin = origin;
-    }
-
-    /**
      * Returns the timestamp of the verification.
      *
      * @return the timestamp string
      */
     public String getTimestamp() {
         return timestamp;
-    }
-
-    /**
-     * Sets the timestamp.
-     *
-     * @param timestamp the timestamp string
-     */
-    void setTimestamp(String timestamp) {
-        this.timestamp = timestamp;
     }
 
     /**
@@ -116,30 +101,12 @@ public class VerifyOutput {
     }
 
     /**
-     * Sets the trace ID.
-     *
-     * @param traceId the trace ID
-     */
-    void setTraceId(String traceId) {
-        this.traceId = traceId;
-    }
-
-    /**
      * Returns the number of attempts made for this verification.
      *
      * @return the number of attempts
      */
     public int getAttempts() {
         return attempts;
-    }
-
-    /**
-     * Sets the number of attempts.
-     *
-     * @param attempts the number of attempts
-     */
-    void setAttempts(int attempts) {
-        this.attempts = attempts;
     }
 
     /**

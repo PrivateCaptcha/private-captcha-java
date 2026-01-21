@@ -1,6 +1,8 @@
 package com.privatecaptcha;
 
-import java.io.BufferedReader;
+import com.google.gson.Gson;
+import com.google.gson.stream.JsonReader;
+
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -9,6 +11,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -37,6 +40,7 @@ public class PrivateCaptchaClient {
 
     private static final Logger LOGGER = Logger.getLogger(PrivateCaptchaClient.class.getName());
     private static final Random RANDOM = new Random();
+    private static final Gson GSON = new Gson();
 
     private final String endpoint;
     private final String apiKey;
@@ -59,23 +63,20 @@ public class PrivateCaptchaClient {
         this.apiKey = configuration.getApiKey();
         this.formField = configuration.getFormField();
         this.failedStatusCode = configuration.getFailedStatusCode();
-        this.connectTimeoutMillis = configuration.getConnectTimeoutMillis();
-        this.readTimeoutMillis = configuration.getReadTimeoutMillis();
+        this.connectTimeoutMillis = (int) configuration.getConnectTimeout().toMillis();
+        this.readTimeoutMillis = (int) configuration.getReadTimeout().toMillis();
 
-        // Build endpoint URL
         String domain = configuration.getDomain();
         if (domain == null || domain.isEmpty()) {
             domain = Domains.GLOBAL;
         }
 
-        // Strip protocol prefix if present
         if (domain.startsWith("https://")) {
             domain = domain.substring(8);
         } else if (domain.startsWith("http://")) {
             domain = domain.substring(7);
         }
 
-        // Remove trailing slashes
         while (domain.endsWith("/")) {
             domain = domain.substring(0, domain.length() - 1);
         }
@@ -102,6 +103,26 @@ public class PrivateCaptchaClient {
     }
 
     /**
+     * Verifies a captcha solution from an HTTP request.
+     * This is a helper method for server-side verification that extracts
+     * the solution from a form parameter.
+     *
+     * @param formParameterExtractor function to extract form parameter by name
+     * @return the verification result
+     * @throws IllegalArgumentException if the extractor is null or solution is empty
+     * @throws PrivateCaptchaHttpException if the API returns a non-retriable error
+     * @throws VerificationFailedException if verification fails after all retry attempts
+     */
+    public VerifyOutput verifyRequest(FormParameterExtractor formParameterExtractor)
+            throws PrivateCaptchaHttpException, VerificationFailedException {
+        if (formParameterExtractor == null) {
+            throw new IllegalArgumentException("Form parameter extractor cannot be null");
+        }
+        String solution = formParameterExtractor.getParameter(formField);
+        return verify(new VerifyInput().setSolution(solution != null ? solution : ""));
+    }
+
+    /**
      * Verifies a captcha solution.
      *
      * @param input the verification input parameters
@@ -124,14 +145,15 @@ public class PrivateCaptchaClient {
         long backoffDelay = Constants.MIN_BACKOFF_MILLIS;
         Exception lastException = null;
 
-        LOGGER.fine("Starting verification with max " + maxAttempts + " attempts, max backoff "
-                + maxBackoffMillis + "ms");
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.log(Level.FINE, "Starting verification: maxAttempts={0}, maxBackoffMs={1}",
+                    new Object[]{maxAttempts, maxBackoffMillis});
+        }
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0) {
                 long delay = backoffDelay;
 
-                // Check if we got a Retry-After hint from the server
                 if (lastException instanceof PrivateCaptchaHttpException) {
                     Integer retryAfter = ((PrivateCaptchaHttpException) lastException).getRetryAfterSeconds();
                     if (retryAfter != null && retryAfter * 1000L > delay) {
@@ -139,9 +161,10 @@ public class PrivateCaptchaClient {
                     }
                 }
 
-                LOGGER.fine("Attempt " + attempt + " failed with error: " +
-                        (lastException != null ? lastException.getMessage() : "unknown") +
-                        ", backoff: " + delay + "ms");
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.log(Level.FINE, "Attempt {0} failed: {1}, backoff={2}ms",
+                            new Object[]{attempt, lastException != null ? lastException.getMessage() : "unknown", delay});
+                }
 
                 try {
                     Thread.sleep(delay);
@@ -150,16 +173,17 @@ public class PrivateCaptchaClient {
                     throw new VerificationFailedException(attempt + 1, e);
                 }
 
-                // Exponential backoff with jitter
                 backoffDelay = Math.min(backoffDelay * 2 + RANDOM.nextInt((int) Math.max(1, backoffDelay / 4)),
                         maxBackoffMillis);
             }
 
             try {
                 VerifyOutput response = doVerify(input.getSolution(), input.getSitekey());
-                response.setAttempts(attempt + 1);
+                response = response.withAttempts(attempt + 1);
 
-                LOGGER.fine("Verification request completed successfully on attempt " + (attempt + 1));
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.log(Level.FINE, "Verification completed on attempt {0}", attempt + 1);
+                }
                 return response;
             } catch (IOException e) {
                 lastException = e;
@@ -170,7 +194,6 @@ public class PrivateCaptchaClient {
                     lastException = e;
                     continue;
                 }
-                // Non-retriable HTTP error - rethrow immediately
                 throw e;
             }
         }
@@ -178,26 +201,20 @@ public class PrivateCaptchaClient {
         throw new VerificationFailedException(maxAttempts, lastException);
     }
 
-    /**
-     * Checks if an HTTP status code indicates a retriable error.
-     */
     private static boolean isRetriableStatusCode(int statusCode) {
         switch (statusCode) {
-            case 429: // Too Many Requests
-            case 500: // Internal Server Error
-            case 502: // Bad Gateway
-            case 503: // Service Unavailable
-            case 504: // Gateway Timeout
-            case 408: // Request Timeout
+            case 429:
+            case 500:
+            case 502:
+            case 503:
+            case 504:
+            case 408:
                 return true;
             default:
                 return false;
         }
     }
 
-    /**
-     * Performs the actual HTTP request to verify the solution.
-     */
     private VerifyOutput doVerify(String solution, String sitekey)
             throws IOException, PrivateCaptchaHttpException {
 
@@ -210,7 +227,6 @@ public class PrivateCaptchaClient {
             connection.setConnectTimeout(connectTimeoutMillis);
             connection.setReadTimeout(readTimeoutMillis);
 
-            // Set headers
             connection.setRequestProperty(Constants.HEADER_API_KEY, apiKey);
             connection.setRequestProperty(Constants.HEADER_USER_AGENT, Constants.USER_AGENT);
             connection.setRequestProperty(Constants.HEADER_CONTENT_TYPE, "text/plain");
@@ -219,7 +235,6 @@ public class PrivateCaptchaClient {
                 connection.setRequestProperty(Constants.HEADER_SITEKEY, sitekey);
             }
 
-            // Write solution to request body
             byte[] requestBody = solution.getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(requestBody.length);
 
@@ -233,7 +248,9 @@ public class PrivateCaptchaClient {
                 traceId = "";
             }
 
-            LOGGER.fine("Received HTTP response. code=" + statusCode + " traceID=" + traceId);
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.log(Level.FINE, "HTTP response: code={0}, traceID={1}", new Object[]{statusCode, traceId});
+            }
 
             if (statusCode >= 300) {
                 Integer retryAfter = null;
@@ -242,26 +259,20 @@ public class PrivateCaptchaClient {
                     if (retryAfterHeader != null && !retryAfterHeader.isEmpty()) {
                         try {
                             retryAfter = Integer.parseInt(retryAfterHeader);
-                            LOGGER.fine("Rate limited, retry after " + retryAfter + "s");
-                        } catch (NumberFormatException e) {
-                            // Ignore invalid header
+                            if (LOGGER.isLoggable(Level.FINE)) {
+                                LOGGER.log(Level.FINE, "Rate limited, retry after {0}s", retryAfter);
+                            }
+                        } catch (NumberFormatException ignored) {
                         }
                     }
                 }
                 throw new PrivateCaptchaHttpException(statusCode, retryAfter, traceId);
             }
 
-            // Read response body
-            String responseBody = readResponseBody(connection);
-
-            // Parse JSON response
-            VerifyOutput output = parseJsonResponse(responseBody);
-            output.setTraceId(traceId);
-
-            return output;
+            VerifyOutput output = parseJsonResponse(connection);
+            return output.withTraceId(traceId);
 
         } catch (SocketTimeoutException | UnknownHostException e) {
-            // Wrap network errors as IOException to be retried
             throw e;
         } finally {
             if (connection != null) {
@@ -270,158 +281,54 @@ public class PrivateCaptchaClient {
         }
     }
 
-    /**
-     * Reads the response body from the connection.
-     */
-    private static String readResponseBody(HttpURLConnection connection) throws IOException {
-        StringBuilder response = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
+    private static VerifyOutput parseJsonResponse(HttpURLConnection connection) throws IOException {
+        try (JsonReader reader = new JsonReader(
                 new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
+
+            boolean success = false;
+            VerifyCode code = VerifyCode.NO_ERROR;
+            String origin = "";
+            String timestamp = "";
+
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName();
+                switch (name) {
+                    case "success":
+                        success = reader.nextBoolean();
+                        break;
+                    case "code":
+                        code = VerifyCode.fromCode(reader.nextInt());
+                        break;
+                    case "origin":
+                        origin = reader.nextString();
+                        break;
+                    case "timestamp":
+                        timestamp = reader.nextString();
+                        break;
+                    default:
+                        reader.skipValue();
+                        break;
+                }
             }
-        }
-        return response.toString();
-    }
+            reader.endObject();
 
-    /**
-     * Simple JSON parser for the verification response.
-     * This avoids requiring external JSON libraries.
-     */
-    private static VerifyOutput parseJsonResponse(String json) {
-        VerifyOutput output = new VerifyOutput();
-
-        if (json == null || json.isEmpty()) {
-            output.setCode(VerifyCode.PARSE_RESPONSE);
-            return output;
-        }
-
-        // Parse success field
-        output.setSuccess(extractBooleanField(json, "success"));
-
-        // Parse code field
-        Integer codeValue = extractIntField(json, "code");
-        if (codeValue != null) {
-            output.setCode(VerifyCode.fromCode(codeValue));
-        }
-
-        // Parse origin field
-        String origin = extractStringField(json, "origin");
-        if (origin != null) {
-            output.setOrigin(origin);
-        }
-
-        // Parse timestamp field
-        String timestamp = extractStringField(json, "timestamp");
-        if (timestamp != null) {
-            output.setTimestamp(timestamp);
-        }
-
-        return output;
-    }
-
-    /**
-     * Extracts a boolean field from JSON.
-     */
-    private static boolean extractBooleanField(String json, String fieldName) {
-        String pattern = "\"" + fieldName + "\"";
-        int startIndex = json.indexOf(pattern);
-        if (startIndex == -1) {
-            return false;
-        }
-
-        int colonIndex = json.indexOf(':', startIndex + pattern.length());
-        if (colonIndex == -1) {
-            return false;
-        }
-
-        // Find the value after the colon
-        String remaining = json.substring(colonIndex + 1).trim();
-        return remaining.startsWith("true");
-    }
-
-    /**
-     * Extracts an integer field from JSON.
-     */
-    private static Integer extractIntField(String json, String fieldName) {
-        String pattern = "\"" + fieldName + "\"";
-        int startIndex = json.indexOf(pattern);
-        if (startIndex == -1) {
-            return null;
-        }
-
-        int colonIndex = json.indexOf(':', startIndex + pattern.length());
-        if (colonIndex == -1) {
-            return null;
-        }
-
-        // Find the numeric value
-        StringBuilder sb = new StringBuilder();
-        boolean started = false;
-        for (int i = colonIndex + 1; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (Character.isDigit(c) || (c == '-' && !started)) {
-                sb.append(c);
-                started = true;
-            } else if (started) {
-                break;
-            } else if (!Character.isWhitespace(c)) {
-                break;
-            }
-        }
-
-        if (sb.length() == 0) {
-            return null;
-        }
-
-        try {
-            return Integer.parseInt(sb.toString());
-        } catch (NumberFormatException e) {
-            return null;
+            return new VerifyOutput(success, code, origin, timestamp, "", 0);
         }
     }
 
     /**
-     * Extracts a string field from JSON.
+     * Functional interface for extracting form parameters from HTTP requests.
+     * This allows integration with any HTTP server framework (Servlet, Spring, etc.)
      */
-    private static String extractStringField(String json, String fieldName) {
-        String pattern = "\"" + fieldName + "\"";
-        int startIndex = json.indexOf(pattern);
-        if (startIndex == -1) {
-            return null;
-        }
-
-        int colonIndex = json.indexOf(':', startIndex + pattern.length());
-        if (colonIndex == -1) {
-            return null;
-        }
-
-        // Find the opening quote
-        int openQuote = json.indexOf('"', colonIndex + 1);
-        if (openQuote == -1) {
-            return null;
-        }
-
-        // Find the closing quote (handling escaped quotes)
-        int closeQuote = -1;
-        for (int i = openQuote + 1; i < json.length(); i++) {
-            if (json.charAt(i) == '"' && (i == 0 || json.charAt(i - 1) != '\\')) {
-                closeQuote = i;
-                break;
-            }
-        }
-
-        if (closeQuote == -1) {
-            return null;
-        }
-
-        // Unescape the string
-        return json.substring(openQuote + 1, closeQuote)
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-                .replace("\\n", "\n")
-                .replace("\\r", "\r")
-                .replace("\\t", "\t");
+    @FunctionalInterface
+    public interface FormParameterExtractor {
+        /**
+         * Gets a form parameter value by name.
+         *
+         * @param name the parameter name
+         * @return the parameter value, or null if not present
+         */
+        String getParameter(String name);
     }
 }
