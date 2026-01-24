@@ -1,8 +1,5 @@
 package com.privatecaptcha;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Enumeration of verification result codes returned by the Private Captcha API.
  */
@@ -20,14 +17,6 @@ public enum VerifyCode {
     TEST_PROPERTY(10, "property-test"),
     INTEGRITY(11, "integrity-error"),
     ORG_SCOPE(12, "org-scope-error");
-
-    private static final Map<Integer, VerifyCode> CODE_MAP = new HashMap<>();
-
-    static {
-        for (VerifyCode vc : values()) {
-            CODE_MAP.put(vc.code, vc);
-        }
-    }
 
     private final int code;
     private final String errorString;
@@ -62,6 +51,21 @@ public enum VerifyCode {
      * @return the corresponding VerifyCode, or ERROR_OTHER if not found
      */
     public static VerifyCode fromCode(int code) {
-        return CODE_MAP.getOrDefault(code, ERROR_OTHER);
+        switch (code) {
+            case 0: return NO_ERROR;
+            case 1: return ERROR_OTHER;
+            case 2: return DUPLICATE_SOLUTIONS;
+            case 3: return INVALID_SOLUTION;
+            case 4: return PARSE_RESPONSE;
+            case 5: return PUZZLE_EXPIRED;
+            case 6: return INVALID_PROPERTY;
+            case 7: return WRONG_OWNER;
+            case 8: return VERIFIED_BEFORE;
+            case 9: return MAINTENANCE_MODE;
+            case 10: return TEST_PROPERTY;
+            case 11: return INTEGRITY;
+            case 12: return ORG_SCOPE;
+            default: return ERROR_OTHER;
+        }
     }
 }

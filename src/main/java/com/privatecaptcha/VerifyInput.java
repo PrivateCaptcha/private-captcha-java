@@ -5,16 +5,22 @@ package com.privatecaptcha;
  */
 public class VerifyInput {
 
-    private String solution;
+    private final String solution;
     private String sitekey;
     private int maxBackoffSeconds;
     private int maxAttempts;
 
     /**
-     * Creates a new VerifyInput with default values.
+     * Creates a new VerifyInput with the required solution.
+     *
+     * @param solution the captcha solution obtained from the client-side
+     * @throws IllegalArgumentException if solution is null or empty
      */
-    public VerifyInput() {
-        this.solution = "";
+    public VerifyInput(String solution) {
+        if (solution == null || solution.isEmpty()) {
+            throw new IllegalArgumentException("Solution cannot be null or empty");
+        }
+        this.solution = solution;
         this.sitekey = "";
         this.maxBackoffSeconds = Constants.DEFAULT_MAX_BACKOFF_SECONDS;
         this.maxAttempts = Constants.DEFAULT_MAX_ATTEMPTS;
@@ -27,17 +33,6 @@ public class VerifyInput {
      */
     public String getSolution() {
         return solution;
-    }
-
-    /**
-     * Sets the captcha solution obtained from the client-side.
-     *
-     * @param solution the solution string
-     * @return this instance for method chaining
-     */
-    public VerifyInput setSolution(String solution) {
-        this.solution = solution;
-        return this;
     }
 
     /**

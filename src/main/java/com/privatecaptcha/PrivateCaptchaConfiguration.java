@@ -8,23 +8,38 @@ import java.time.Duration;
  */
 public class PrivateCaptchaConfiguration {
 
+    private final String apiKey;
     private String domain;
-    private String apiKey;
     private String formField;
     private int failedStatusCode;
     private Duration connectTimeout;
     private Duration readTimeout;
 
     /**
-     * Creates a new configuration with default values.
+     * Creates a new configuration with the required API key.
+     *
+     * @param apiKey the API key from Private Captcha account settings
+     * @throws IllegalArgumentException if apiKey is null or empty
      */
-    public PrivateCaptchaConfiguration() {
+    public PrivateCaptchaConfiguration(String apiKey) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalArgumentException("API key cannot be null or empty");
+        }
+        this.apiKey = apiKey;
         this.domain = Domains.GLOBAL;
-        this.apiKey = "";
         this.formField = Constants.DEFAULT_FORM_FIELD;
         this.failedStatusCode = HttpURLConnection.HTTP_FORBIDDEN;
         this.connectTimeout = Duration.ofSeconds(10);
         this.readTimeout = Duration.ofSeconds(30);
+    }
+
+    /**
+     * Gets the API key for authentication.
+     *
+     * @return the API key
+     */
+    public String getApiKey() {
+        return apiKey;
     }
 
     /**
@@ -45,27 +60,6 @@ public class PrivateCaptchaConfiguration {
      */
     public PrivateCaptchaConfiguration setDomain(String domain) {
         this.domain = domain;
-        return this;
-    }
-
-    /**
-     * Gets the API key for authentication.
-     *
-     * @return the API key
-     */
-    public String getApiKey() {
-        return apiKey;
-    }
-
-    /**
-     * Sets the API key for authentication.
-     * This is required.
-     *
-     * @param apiKey the API key from Private Captcha account settings
-     * @return this instance for method chaining
-     */
-    public PrivateCaptchaConfiguration setApiKey(String apiKey) {
-        this.apiKey = apiKey;
         return this;
     }
 

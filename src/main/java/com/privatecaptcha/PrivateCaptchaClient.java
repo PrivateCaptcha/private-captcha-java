@@ -4,13 +4,11 @@ import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.SocketTimeoutException;
-import java.net.URL;
-import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
+import java.io.StringReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Random;
 import java.util.logging.Level;
@@ -22,12 +20,10 @@ import java.util.logging.Logger;
  * <p>Example usage:</p>
  * <pre>{@code
  * PrivateCaptchaClient client = new PrivateCaptchaClient(
- *     new PrivateCaptchaConfiguration()
- *         .setApiKey("pc_your_api_key")
+ *     new PrivateCaptchaConfiguration("pc_your_api_key")
  * );
  *
- * VerifyOutput output = client.verify(new VerifyInput()
- *     .setSolution(solution));
+ * VerifyOutput output = client.verify(new VerifyInput(solution));
  *
  * if (output.ok()) {
  *     // Captcha verified successfully
@@ -46,25 +42,21 @@ public class PrivateCaptchaClient {
     private final String apiKey;
     private final String formField;
     private final int failedStatusCode;
-    private final int connectTimeoutMillis;
-    private final int readTimeoutMillis;
+    private final Duration connectTimeout;
+    private final Duration readTimeout;
+    private final HttpClient httpClient;
 
     /**
      * Creates a new Private Captcha client with the specified configuration.
      *
      * @param configuration the client configuration
-     * @throws IllegalArgumentException if the API key is empty
      */
     public PrivateCaptchaClient(PrivateCaptchaConfiguration configuration) {
-        if (configuration.getApiKey() == null || configuration.getApiKey().isEmpty()) {
-            throw new IllegalArgumentException("API key cannot be empty");
-        }
-
         this.apiKey = configuration.getApiKey();
         this.formField = configuration.getFormField();
         this.failedStatusCode = configuration.getFailedStatusCode();
-        this.connectTimeoutMillis = (int) configuration.getConnectTimeout().toMillis();
-        this.readTimeoutMillis = (int) configuration.getReadTimeout().toMillis();
+        this.connectTimeout = configuration.getConnectTimeout();
+        this.readTimeout = configuration.getReadTimeout();
 
         String domain = configuration.getDomain();
         if (domain == null || domain.isEmpty()) {
@@ -82,6 +74,9 @@ public class PrivateCaptchaClient {
         }
 
         this.endpoint = "https://" + domain + "/verify";
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .build();
     }
 
     /**
@@ -119,7 +114,10 @@ public class PrivateCaptchaClient {
             throw new IllegalArgumentException("Form parameter extractor cannot be null");
         }
         String solution = formParameterExtractor.getParameter(formField);
-        return verify(new VerifyInput().setSolution(solution != null ? solution : ""));
+        if (solution == null || solution.isEmpty()) {
+            throw new IllegalArgumentException("Solution cannot be empty");
+        }
+        return verify(new VerifyInput(solution));
     }
 
     /**
@@ -127,68 +125,65 @@ public class PrivateCaptchaClient {
      *
      * @param input the verification input parameters
      * @return the verification output
-     * @throws IllegalArgumentException if the solution is empty
      * @throws PrivateCaptchaHttpException if the API returns an error that should not be retried
      * @throws VerificationFailedException if verification fails after all retry attempts
      */
     public VerifyOutput verify(VerifyInput input)
             throws PrivateCaptchaHttpException, VerificationFailedException {
-        if (input.getSolution() == null || input.getSolution().isEmpty()) {
-            throw new IllegalArgumentException("Solution cannot be empty");
-        }
 
         int maxAttempts = input.getMaxAttempts() > 0 ? input.getMaxAttempts() : Constants.DEFAULT_MAX_ATTEMPTS;
-        int maxBackoffMillis = (input.getMaxBackoffSeconds() > 0
-                ? input.getMaxBackoffSeconds()
-                : Constants.DEFAULT_MAX_BACKOFF_SECONDS) * 1000;
+        Duration maxBackoff = Duration.ofSeconds(
+                input.getMaxBackoffSeconds() > 0 ? input.getMaxBackoffSeconds() : Constants.DEFAULT_MAX_BACKOFF_SECONDS
+        );
 
-        long backoffDelay = Constants.MIN_BACKOFF_MILLIS;
+        Duration backoffDelay = Duration.ofMillis(Constants.MIN_BACKOFF_MILLIS);
         Exception lastException = null;
 
-        if (LOGGER.isLoggable(Level.FINE)) {
-            LOGGER.log(Level.FINE, "Starting verification: maxAttempts={0}, maxBackoffMs={1}",
-                    new Object[]{maxAttempts, maxBackoffMillis});
-        }
+        LOGGER.log(Level.FINE, "Starting verification: maxAttempts={0}, maxBackoff={1}",
+                new Object[]{maxAttempts, maxBackoff});
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0) {
-                long delay = backoffDelay;
+                Duration delay = backoffDelay;
 
                 if (lastException instanceof PrivateCaptchaHttpException) {
                     Integer retryAfter = ((PrivateCaptchaHttpException) lastException).getRetryAfterSeconds();
-                    if (retryAfter != null && retryAfter * 1000L > delay) {
-                        delay = Math.min(retryAfter * 1000L, maxBackoffMillis);
+                    if (retryAfter != null) {
+                        Duration retryAfterDuration = Duration.ofSeconds(retryAfter);
+                        if (retryAfterDuration.compareTo(delay) > 0) {
+                            delay = retryAfterDuration.compareTo(maxBackoff) < 0 ? retryAfterDuration : maxBackoff;
+                        }
                     }
                 }
 
-                if (LOGGER.isLoggable(Level.FINE)) {
-                    LOGGER.log(Level.FINE, "Attempt {0} failed: {1}, backoff={2}ms",
-                            new Object[]{attempt, lastException != null ? lastException.getMessage() : "unknown", delay});
-                }
+                LOGGER.log(Level.FINE, "Attempt {0} failed: {1}, backoff={2}",
+                        new Object[]{attempt, lastException != null ? lastException.getMessage() : "unknown", delay});
 
                 try {
-                    Thread.sleep(delay);
+                    Thread.sleep(delay.toMillis());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new VerificationFailedException(attempt + 1, e);
                 }
 
-                backoffDelay = Math.min(backoffDelay * 2 + RANDOM.nextInt((int) Math.max(1, backoffDelay / 4)),
-                        maxBackoffMillis);
+                long currentBackoffMs = backoffDelay.toMillis();
+                long jitter = RANDOM.nextInt((int) Math.max(1, currentBackoffMs / 4));
+                long newBackoffMs = Math.min(currentBackoffMs * 2 + jitter, maxBackoff.toMillis());
+                backoffDelay = Duration.ofMillis(newBackoffMs);
             }
 
             try {
                 VerifyOutput response = doVerify(input.getSolution(), input.getSitekey());
                 response = response.withAttempts(attempt + 1);
 
-                if (LOGGER.isLoggable(Level.FINE)) {
-                    LOGGER.log(Level.FINE, "Verification completed on attempt {0}", attempt + 1);
-                }
+                LOGGER.log(Level.FINE, "Verification completed on attempt {0}", attempt + 1);
                 return response;
             } catch (IOException e) {
                 lastException = e;
                 LOGGER.log(Level.FINE, "Request failed with IOException", e);
-                continue;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new VerificationFailedException(attempt + 1, e);
             } catch (PrivateCaptchaHttpException e) {
                 if (isRetriableStatusCode(e.getStatusCode())) {
                     lastException = e;
@@ -203,12 +198,12 @@ public class PrivateCaptchaClient {
 
     private static boolean isRetriableStatusCode(int statusCode) {
         switch (statusCode) {
+            case 408:
             case 429:
             case 500:
             case 502:
             case 503:
             case 504:
-            case 408:
                 return true;
             default:
                 return false;
@@ -216,74 +211,51 @@ public class PrivateCaptchaClient {
     }
 
     private VerifyOutput doVerify(String solution, String sitekey)
-            throws IOException, PrivateCaptchaHttpException {
+            throws IOException, InterruptedException, PrivateCaptchaHttpException {
 
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(endpoint);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
-            connection.setConnectTimeout(connectTimeoutMillis);
-            connection.setReadTimeout(readTimeoutMillis);
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .timeout(readTimeout)
+                .header(Constants.HEADER_API_KEY, apiKey)
+                .header(Constants.HEADER_USER_AGENT, Constants.USER_AGENT)
+                .header(Constants.HEADER_CONTENT_TYPE, "text/plain")
+                .POST(HttpRequest.BodyPublishers.ofString(solution));
 
-            connection.setRequestProperty(Constants.HEADER_API_KEY, apiKey);
-            connection.setRequestProperty(Constants.HEADER_USER_AGENT, Constants.USER_AGENT);
-            connection.setRequestProperty(Constants.HEADER_CONTENT_TYPE, "text/plain");
+        if (sitekey != null && !sitekey.isEmpty()) {
+            requestBuilder.header(Constants.HEADER_SITEKEY, sitekey);
+        }
 
-            if (sitekey != null && !sitekey.isEmpty()) {
-                connection.setRequestProperty(Constants.HEADER_SITEKEY, sitekey);
-            }
+        HttpResponse<String> response = httpClient.send(
+                requestBuilder.build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
 
-            byte[] requestBody = solution.getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(requestBody.length);
+        int statusCode = response.statusCode();
+        String traceId = response.headers().firstValue(Constants.HEADER_TRACE_ID).orElse("");
 
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(requestBody);
-            }
+        LOGGER.log(Level.FINE, "HTTP response: code={0}, traceID={1}", new Object[]{statusCode, traceId});
 
-            int statusCode = connection.getResponseCode();
-            String traceId = connection.getHeaderField(Constants.HEADER_TRACE_ID);
-            if (traceId == null) {
-                traceId = "";
-            }
-
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.log(Level.FINE, "HTTP response: code={0}, traceID={1}", new Object[]{statusCode, traceId});
-            }
-
-            if (statusCode >= 300) {
-                Integer retryAfter = null;
-                if (statusCode == 429) {
-                    String retryAfterHeader = connection.getHeaderField(Constants.HEADER_RETRY_AFTER);
-                    if (retryAfterHeader != null && !retryAfterHeader.isEmpty()) {
-                        try {
-                            retryAfter = Integer.parseInt(retryAfterHeader);
-                            if (LOGGER.isLoggable(Level.FINE)) {
-                                LOGGER.log(Level.FINE, "Rate limited, retry after {0}s", retryAfter);
-                            }
-                        } catch (NumberFormatException ignored) {
-                        }
+        if (statusCode >= 300) {
+            Integer retryAfter = null;
+            if (statusCode == 429) {
+                String retryAfterHeader = response.headers().firstValue(Constants.HEADER_RETRY_AFTER).orElse(null);
+                if (retryAfterHeader != null && !retryAfterHeader.isEmpty()) {
+                    try {
+                        retryAfter = Integer.parseInt(retryAfterHeader);
+                        LOGGER.log(Level.FINE, "Rate limited, retry after {0}s", retryAfter);
+                    } catch (NumberFormatException ignored) {
                     }
                 }
-                throw new PrivateCaptchaHttpException(statusCode, retryAfter, traceId);
             }
-
-            VerifyOutput output = parseJsonResponse(connection);
-            return output.withTraceId(traceId);
-
-        } catch (SocketTimeoutException | UnknownHostException e) {
-            throw e;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
+            throw new PrivateCaptchaHttpException(statusCode, retryAfter, traceId);
         }
+
+        VerifyOutput output = parseJsonResponse(response.body());
+        return output.withTraceId(traceId);
     }
 
-    private static VerifyOutput parseJsonResponse(HttpURLConnection connection) throws IOException {
-        try (JsonReader reader = new JsonReader(
-                new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+    private static VerifyOutput parseJsonResponse(String body) throws IOException {
+        try (JsonReader reader = new JsonReader(new StringReader(body))) {
 
             boolean success = false;
             VerifyCode code = VerifyCode.NO_ERROR;
@@ -319,7 +291,15 @@ public class PrivateCaptchaClient {
 
     /**
      * Functional interface for extracting form parameters from HTTP requests.
-     * This allows integration with any HTTP server framework (Servlet, Spring, etc.)
+     * This allows integration with any HTTP server framework.
+     *
+     * <p>Examples:</p>
+     * <ul>
+     *   <li>Servlet: {@code client.verifyRequest(request::getParameter)}</li>
+     *   <li>Spring WebFlux: {@code client.verifyRequest(params::getFirst)}</li>
+     *   <li>Vert.x: {@code client.verifyRequest(request::getParam)}</li>
+     *   <li>Javalin: {@code client.verifyRequest(ctx::formParam)}</li>
+     * </ul>
      */
     @FunctionalInterface
     public interface FormParameterExtractor {

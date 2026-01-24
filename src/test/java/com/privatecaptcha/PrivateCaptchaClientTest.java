@@ -2,11 +2,10 @@ package com.privatecaptcha;
 
 import org.junit.Test;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
 
@@ -14,9 +13,6 @@ import static org.junit.Assert.*;
 
 /**
  * Tests for the Private Captcha client.
- * 
- * Note: Some tests require a valid API key set in the PC_API_KEY environment variable.
- * Tests that require the API key will be skipped if it's not set.
  */
 public class PrivateCaptchaClientTest {
 
@@ -30,54 +26,37 @@ public class PrivateCaptchaClientTest {
             return testPuzzle;
         }
 
-        URL url = new URL("https://api.privatecaptcha.com/puzzle?sitekey=aaaaaaaabbbbccccddddeeeeeeeeeeee");
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        try {
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Origin", "not.empty");
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.privatecaptcha.com/puzzle?sitekey=aaaaaaaabbbbccccddddeeeeeeeeeeee"))
+                .header("Origin", "not.empty")
+                .GET()
+                .build();
 
-            StringBuilder response = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    response.append(line);
-                }
-            }
-
-            testPuzzle = response.toString();
-            return testPuzzle;
-        } finally {
-            connection.disconnect();
-        }
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        testPuzzle = response.body();
+        return testPuzzle;
     }
 
     private static String getApiKey() {
-        String apiKey = System.getenv("PC_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            return null;
-        }
-        return apiKey;
+        return System.getenv("PC_API_KEY");
     }
 
     @Test
     public void testVerifyWithTestPuzzle() throws Exception {
         String apiKey = getApiKey();
-        if (apiKey == null) {
-            System.out.println("Skipping testVerifyWithTestPuzzle: PC_API_KEY not set");
-            return;
-        }
+        assertNotNull("PC_API_KEY environment variable must be set", apiKey);
 
         String puzzle = fetchTestPuzzle();
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey(apiKey)
+                new PrivateCaptchaConfiguration(apiKey)
         );
 
         byte[] emptySolutions = new byte[SOLUTIONS_COUNT * SOLUTION_LENGTH];
         String solutionsStr = Base64.getEncoder().encodeToString(emptySolutions);
         String payload = solutionsStr + "." + puzzle;
 
-        VerifyOutput output = client.verify(new VerifyInput().setSolution(payload));
+        VerifyOutput output = client.verify(new VerifyInput(payload));
 
         assertTrue("Expected success flag to be true", output.isSuccess());
         assertFalse("Expected ok() to be false for test property", output.ok());
@@ -87,14 +66,11 @@ public class PrivateCaptchaClientTest {
     @Test
     public void testVerifyWithInvalidSolution() throws Exception {
         String apiKey = getApiKey();
-        if (apiKey == null) {
-            System.out.println("Skipping testVerifyWithInvalidSolution: PC_API_KEY not set");
-            return;
-        }
+        assertNotNull("PC_API_KEY environment variable must be set", apiKey);
 
         String puzzle = fetchTestPuzzle();
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey(apiKey)
+                new PrivateCaptchaConfiguration(apiKey)
         );
 
         byte[] emptySolutions = new byte[(SOLUTIONS_COUNT * SOLUTION_LENGTH) / 2];
@@ -102,7 +78,7 @@ public class PrivateCaptchaClientTest {
         String payload = solutionsStr + "." + puzzle;
 
         try {
-            client.verify(new VerifyInput().setSolution(payload));
+            client.verify(new VerifyInput(payload));
             fail("Expected PrivateCaptchaHttpException");
         } catch (PrivateCaptchaHttpException e) {
             assertEquals("Expected HTTP 400", 400, e.getStatusCode());
@@ -111,30 +87,34 @@ public class PrivateCaptchaClientTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void testVerifyEmptySolution() throws Exception {
-        PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey("test-key")
-        );
+        new VerifyInput("");
+    }
 
-        client.verify(new VerifyInput());
+    @Test(expected = IllegalArgumentException.class)
+    public void testVerifyNullSolution() throws Exception {
+        new VerifyInput(null);
     }
 
     @Test(expected = IllegalArgumentException.class)
     public void testConstructorWithEmptyApiKey() {
-        new PrivateCaptchaClient(new PrivateCaptchaConfiguration());
+        new PrivateCaptchaConfiguration("");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testConstructorWithNullApiKey() {
+        new PrivateCaptchaConfiguration(null);
     }
 
     @Test
     public void testRetryBackoff() throws Exception {
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setDomain("does-not-exist.qwerty12345-asdfjkl.net")
                         .setConnectTimeout(Duration.ofSeconds(1))
                         .setReadTimeout(Duration.ofSeconds(1))
         );
 
-        VerifyInput input = new VerifyInput()
-                .setSolution("asdf")
+        VerifyInput input = new VerifyInput("asdf")
                 .setMaxBackoffSeconds(1)
                 .setMaxAttempts(4);
 
@@ -150,8 +130,7 @@ public class PrivateCaptchaClientTest {
     public void testCustomFormField() {
         String customFieldName = "my-custom-captcha-field";
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setFormField(customFieldName)
         );
 
@@ -161,7 +140,7 @@ public class PrivateCaptchaClientTest {
     @Test
     public void testDefaultFormField() {
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
         );
 
         assertEquals("Expected default form field", "private-captcha-solution", client.getFormField());
@@ -171,8 +150,7 @@ public class PrivateCaptchaClientTest {
     public void testCustomFailedStatusCode() {
         int customStatusCode = 418;
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setFailedStatusCode(customStatusCode)
         );
 
@@ -182,7 +160,7 @@ public class PrivateCaptchaClientTest {
     @Test
     public void testDefaultFailedStatusCode() {
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
         );
 
         assertEquals("Expected default 403 status code", 403, client.getFailedStatusCode());
@@ -191,22 +169,19 @@ public class PrivateCaptchaClientTest {
     @Test
     public void testDomainNormalization() {
         PrivateCaptchaClient client1 = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setDomain("https://example.com/")
         );
         assertNotNull(client1);
 
         PrivateCaptchaClient client2 = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setDomain("http://example.com")
         );
         assertNotNull(client2);
 
         PrivateCaptchaClient client3 = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setDomain("example.com///")
         );
         assertNotNull(client3);
@@ -275,15 +250,14 @@ public class PrivateCaptchaClientTest {
 
     @Test
     public void testVerifyInput() {
-        VerifyInput input = new VerifyInput();
+        VerifyInput input = new VerifyInput("solution");
 
-        assertEquals("", input.getSolution());
+        assertEquals("solution", input.getSolution());
         assertEquals("", input.getSitekey());
         assertEquals(20, input.getMaxBackoffSeconds());
         assertEquals(5, input.getMaxAttempts());
 
         VerifyInput same = input
-                .setSolution("solution")
                 .setSitekey("sitekey")
                 .setMaxBackoffSeconds(30)
                 .setMaxAttempts(10);
@@ -297,10 +271,10 @@ public class PrivateCaptchaClientTest {
 
     @Test
     public void testPrivateCaptchaConfiguration() {
-        PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration();
+        PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration("key");
 
         assertEquals(Domains.GLOBAL, config.getDomain());
-        assertEquals("", config.getApiKey());
+        assertEquals("key", config.getApiKey());
         assertEquals("private-captcha-solution", config.getFormField());
         assertEquals(403, config.getFailedStatusCode());
         assertEquals(Duration.ofSeconds(10), config.getConnectTimeout());
@@ -308,7 +282,6 @@ public class PrivateCaptchaClientTest {
 
         PrivateCaptchaConfiguration same = config
                 .setDomain("example.com")
-                .setApiKey("key")
                 .setFormField("field")
                 .setFailedStatusCode(401)
                 .setConnectTimeout(Duration.ofSeconds(5))
@@ -356,8 +329,7 @@ public class PrivateCaptchaClientTest {
     @Test
     public void testVerifyRequest() throws Exception {
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration()
-                        .setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
                         .setFormField("my-field")
         );
 
@@ -372,7 +344,7 @@ public class PrivateCaptchaClientTest {
     @Test(expected = IllegalArgumentException.class)
     public void testVerifyRequestNullExtractor() throws Exception {
         PrivateCaptchaClient client = new PrivateCaptchaClient(
-                new PrivateCaptchaConfiguration().setApiKey("test-key")
+                new PrivateCaptchaConfiguration("test-key")
         );
 
         client.verifyRequest(null);

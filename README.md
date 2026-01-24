@@ -6,7 +6,7 @@ Official Java client for the [Private Captcha](https://privatecaptcha.com) API.
 
 ## Requirements
 
-- Java 8 or higher
+- Java 11 or higher
 
 ## Installation
 
@@ -40,13 +40,11 @@ Download the JAR file from the [releases page](https://github.com/PrivateCaptcha
 import com.privatecaptcha.*;
 
 PrivateCaptchaClient client = new PrivateCaptchaClient(
-    new PrivateCaptchaConfiguration()
-        .setApiKey("pc_your_api_key")
+    new PrivateCaptchaConfiguration("pc_your_api_key")
 );
 
 try {
-    VerifyOutput output = client.verify(new VerifyInput()
-        .setSolution(solution));
+    VerifyOutput output = client.verify(new VerifyInput(solution));
     
     if (output.ok()) {
         System.out.println("Verification successful!");
@@ -65,8 +63,7 @@ try {
 ```java
 import java.time.Duration;
 
-PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration()
-    .setApiKey("pc_your_api_key")
+PrivateCaptchaConfiguration config = new PrivateCaptchaConfiguration("pc_your_api_key")
     .setDomain(Domains.GLOBAL)
     .setFormField("private-captcha-solution")
     .setFailedStatusCode(403)
@@ -79,8 +76,7 @@ PrivateCaptchaClient client = new PrivateCaptchaClient(config);
 ## Verification Input Options
 
 ```java
-VerifyInput input = new VerifyInput()
-    .setSolution(solution)
+VerifyInput input = new VerifyInput(solution)
     .setSitekey("your-sitekey")
     .setMaxBackoffSeconds(20)
     .setMaxAttempts(5);
@@ -128,26 +124,25 @@ try {
 
 The client automatically retries on:
 - Network errors (connection timeouts, unknown hosts)
+- HTTP 408 (Request Timeout)
 - HTTP 429 (Too Many Requests)
 - HTTP 500, 502, 503, 504 (Server errors)
-- HTTP 408 (Request Timeout)
 
 Non-retriable errors (e.g., 400, 401, 403) are thrown immediately.
 
-## Servlet Integration Example
+## Server Integration
+
+The `verifyRequest()` method provides easy integration with any HTTP server framework using the `FormParameterExtractor` functional interface:
+
+### Servlet (Jakarta/Javax)
 
 ```java
 @WebServlet("/submit-form")
 public class FormServlet extends HttpServlet {
     
-    private final PrivateCaptchaClient captchaClient;
-    
-    public FormServlet() {
-        captchaClient = new PrivateCaptchaClient(
-            new PrivateCaptchaConfiguration()
-                .setApiKey(System.getenv("PC_API_KEY"))
-        );
-    }
+    private final PrivateCaptchaClient captchaClient = new PrivateCaptchaClient(
+        new PrivateCaptchaConfiguration(System.getenv("PC_API_KEY"))
+    );
     
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) 
@@ -172,15 +167,127 @@ public class FormServlet extends HttpServlet {
 }
 ```
 
+### Spring MVC
+
+```java
+@RestController
+public class FormController {
+    
+    private final PrivateCaptchaClient captchaClient = new PrivateCaptchaClient(
+        new PrivateCaptchaConfiguration(System.getenv("PC_API_KEY"))
+    );
+    
+    @PostMapping("/submit-form")
+    public ResponseEntity<String> submitForm(HttpServletRequest request) {
+        try {
+            VerifyOutput output = captchaClient.verifyRequest(request::getParameter);
+            
+            if (!output.ok()) {
+                return ResponseEntity.status(captchaClient.getFailedStatusCode())
+                    .body("Captcha verification failed: " + output.getErrorMessage());
+            }
+            
+            return ResponseEntity.ok("Form submitted successfully!");
+        } catch (Exception e) {
+            return ResponseEntity.status(captchaClient.getFailedStatusCode())
+                .body("Captcha verification error");
+        }
+    }
+}
+```
+
+### Spring WebFlux
+
+```java
+@RestController
+public class FormController {
+    
+    private final PrivateCaptchaClient captchaClient = new PrivateCaptchaClient(
+        new PrivateCaptchaConfiguration(System.getenv("PC_API_KEY"))
+    );
+    
+    @PostMapping("/submit-form")
+    public Mono<ResponseEntity<String>> submitForm(ServerWebExchange exchange) {
+        return exchange.getFormData().map(formData -> {
+            try {
+                VerifyOutput output = captchaClient.verifyRequest(formData::getFirst);
+                
+                if (!output.ok()) {
+                    return ResponseEntity.status(captchaClient.getFailedStatusCode())
+                        .body("Captcha verification failed");
+                }
+                
+                return ResponseEntity.ok("Form submitted successfully!");
+            } catch (Exception e) {
+                return ResponseEntity.status(captchaClient.getFailedStatusCode())
+                    .body("Captcha verification error");
+            }
+        });
+    }
+}
+```
+
+### Vert.x
+
+```java
+router.post("/submit-form").handler(ctx -> {
+    try {
+        VerifyOutput output = captchaClient.verifyRequest(ctx.request()::getParam);
+        
+        if (!output.ok()) {
+            ctx.response()
+                .setStatusCode(captchaClient.getFailedStatusCode())
+                .end("Captcha verification failed");
+            return;
+        }
+        
+        ctx.response().end("Form submitted successfully!");
+    } catch (Exception e) {
+        ctx.response()
+            .setStatusCode(captchaClient.getFailedStatusCode())
+            .end("Captcha verification error");
+    }
+});
+```
+
+### Javalin
+
+```java
+app.post("/submit-form", ctx -> {
+    try {
+        VerifyOutput output = captchaClient.verifyRequest(ctx::formParam);
+        
+        if (!output.ok()) {
+            ctx.status(captchaClient.getFailedStatusCode())
+               .result("Captcha verification failed");
+            return;
+        }
+        
+        ctx.result("Form submitted successfully!");
+    } catch (Exception e) {
+        ctx.status(captchaClient.getFailedStatusCode())
+           .result("Captcha verification error");
+    }
+});
+```
+
 ## Building from Source
 
 ```bash
 git clone https://github.com/PrivateCaptcha/private-captcha-java.git
 cd private-captcha-java
-mvn clean package
 
-# Run tests (requires PC_API_KEY environment variable for integration tests)
-PC_API_KEY=your_api_key mvn test
+# Build
+make build
+
+# Run tests (requires PC_API_KEY environment variable)
+make test PC_API_KEY=your_api_key
+
+# Package
+make package
+
+# Clean
+make clean
 ```
 
 ## Publishing to Maven Central
