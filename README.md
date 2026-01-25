@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/PrivateCaptcha/private-captcha-java/actions/workflows/ci.yml/badge.svg)](https://github.com/PrivateCaptcha/private-captcha-java/actions/workflows/ci.yml)
 
+[![Maven Central](https://img.shields.io/maven-central/v/com.privatecaptcha/private-captcha-java)](
+https://central.sonatype.com/artifact/com.privatecaptcha/private-captcha-java
+)
+
 Official Java client for the [Private Captcha](https://privatecaptcha.com) API.
 
 <mark>Please check the [official documentation](https://docs.privatecaptcha.com/docs/integrations/java/) for the in-depth and up-to-date information.</mark>
