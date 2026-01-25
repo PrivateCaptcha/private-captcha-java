@@ -11,6 +11,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: Maven release
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
