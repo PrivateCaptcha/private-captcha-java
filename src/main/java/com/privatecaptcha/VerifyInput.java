@@ -17,11 +17,22 @@ public class VerifyInput {
      * @throws IllegalArgumentException if solution is null or empty
      */
     public VerifyInput(String solution) {
+        this(solution, "");
+    }
+
+    /**
+     * Creates a new VerifyInput with the required solution.
+     *
+     * @param solution the captcha solution obtained from the client-side
+     * @param sitekey sitekey that is intended to be verified against
+     * @throws IllegalArgumentException if solution is null or empty
+     */
+    public VerifyInput(String solution, String sitekey) {
         if (solution == null || solution.isEmpty()) {
             throw new IllegalArgumentException("Solution cannot be null or empty");
         }
         this.solution = solution;
-        this.sitekey = "";
+        this.sitekey = sitekey;
         this.maxBackoffSeconds = Constants.DEFAULT_MAX_BACKOFF_SECONDS;
         this.maxAttempts = Constants.DEFAULT_MAX_ATTEMPTS;
     }

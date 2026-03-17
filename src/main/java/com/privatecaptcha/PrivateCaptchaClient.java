@@ -110,11 +110,28 @@ public class PrivateCaptchaClient {
      */
     public VerifyOutput verifyRequest(FormParameterExtractor formParameterExtractor)
             throws PrivateCaptchaHttpException, VerificationFailedException {
+        return this.verifyRequest(formParameterExtractor, "");
+    }
+
+    /**
+     * Verifies a captcha solution from an HTTP request.
+     * This is a helper method for server-side verification that extracts
+     * the solution from a form parameter.
+     *
+     * @param formParameterExtractor function to extract form parameter by name
+     * @param sitekey sitekey that is intended to be verified against
+     * @return the verification result
+     * @throws IllegalArgumentException if the extractor is null or solution is empty
+     * @throws PrivateCaptchaHttpException if the API returns a non-retriable error
+     * @throws VerificationFailedException if verification fails after all retry attempts
+     */
+    public VerifyOutput verifyRequest(FormParameterExtractor formParameterExtractor, String sitekey)
+            throws PrivateCaptchaHttpException, VerificationFailedException {
         if (formParameterExtractor == null) {
             throw new IllegalArgumentException("Form parameter extractor cannot be null");
         }
         String solution = formParameterExtractor.getParameter(formField);
-        return verify(new VerifyInput(solution));
+        return verify(new VerifyInput(solution, sitekey));
     }
 
     /**

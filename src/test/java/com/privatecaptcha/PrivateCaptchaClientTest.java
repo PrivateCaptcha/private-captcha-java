@@ -18,6 +18,7 @@ public class PrivateCaptchaClientTest {
 
     private static final int SOLUTIONS_COUNT = 16;
     private static final int SOLUTION_LENGTH = 8;
+    private static final String TEST_SITEKEY = "aaaaaaaabbbbccccddddeeeeeeeeeeee";
 
     private static String testPuzzle;
 
@@ -28,7 +29,7 @@ public class PrivateCaptchaClientTest {
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.privatecaptcha.com/puzzle?sitekey=aaaaaaaabbbbccccddddeeeeeeeeeeee"))
+                .uri(URI.create("https://api.privatecaptcha.com/puzzle?sitekey=" + TEST_SITEKEY))
                 .header("Origin", "not.empty")
                 .GET()
                 .build();
@@ -56,7 +57,7 @@ public class PrivateCaptchaClientTest {
         String solutionsStr = Base64.getEncoder().encodeToString(emptySolutions);
         String payload = solutionsStr + "." + puzzle;
 
-        VerifyOutput output = client.verify(new VerifyInput(payload));
+        VerifyOutput output = client.verify(new VerifyInput(payload, TEST_SITEKEY));
 
         assertTrue("Expected success flag to be true", output.isSuccess());
         assertFalse("Expected ok() to be false for test property", output.ok());
@@ -78,7 +79,7 @@ public class PrivateCaptchaClientTest {
         String payload = solutionsStr + "." + puzzle;
 
         try {
-            client.verify(new VerifyInput(payload));
+            client.verify(new VerifyInput(payload, TEST_SITEKEY));
             fail("Expected PrivateCaptchaHttpException");
         } catch (PrivateCaptchaHttpException e) {
             assertEquals("Expected HTTP 400", 400, e.getStatusCode());
@@ -115,6 +116,7 @@ public class PrivateCaptchaClientTest {
         );
 
         VerifyInput input = new VerifyInput("asdf")
+                .setSitekey(TEST_SITEKEY)
                 .setMaxBackoffSeconds(1)
                 .setMaxAttempts(4);
 
