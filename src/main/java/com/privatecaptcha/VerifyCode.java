@@ -17,6 +17,7 @@ public enum VerifyCode {
     TEST_PROPERTY(10, "property-test"),
     INTEGRITY(11, "integrity-error"),
     ORG_SCOPE(12, "org-scope-error");
+    SOLUTION_TIMING(13, "solution-timing");
 
     private final int code;
     private final String errorString;

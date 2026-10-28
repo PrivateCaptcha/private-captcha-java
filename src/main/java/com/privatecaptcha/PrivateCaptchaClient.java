@@ -275,6 +275,7 @@ public class PrivateCaptchaClient {
             VerifyCode code = VerifyCode.NO_ERROR;
             String origin = "";
             String timestamp = "";
+            String edgeToken = "";
 
             reader.beginObject();
             while (reader.hasNext()) {
@@ -292,6 +293,9 @@ public class PrivateCaptchaClient {
                     case "timestamp":
                         timestamp = reader.nextString();
                         break;
+                    case "edge_token":
+                        edgeToken = reader.nextString();
+                        break;
                     default:
                         reader.skipValue();
                         break;
@@ -299,7 +303,7 @@ public class PrivateCaptchaClient {
             }
             reader.endObject();
 
-            return new VerifyOutput(success, code, origin, timestamp, "", 0);
+            return new VerifyOutput(success, code, origin, timestamp, edgeToken, "", 0);
         }
     }
 

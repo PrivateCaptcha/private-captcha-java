@@ -9,6 +9,7 @@ public class VerifyOutput {
     private final VerifyCode code;
     private final String origin;
     private final String timestamp;
+    private final String edgeToken;
     private final String traceId;
     private final int attempts;
 
@@ -22,11 +23,12 @@ public class VerifyOutput {
     /**
      * Creates a new VerifyOutput with the specified values.
      */
-    VerifyOutput(boolean success, VerifyCode code, String origin, String timestamp, String traceId, int attempts) {
+    VerifyOutput(boolean success, VerifyCode code, String origin, String timestamp, String edgeToken, String traceId, int attempts) {
         this.success = success;
         this.code = code;
         this.origin = origin != null ? origin : "";
         this.timestamp = timestamp != null ? timestamp : "";
+        this.edgeToken = edgeToken != null ? edgeToken : "",
         this.traceId = traceId != null ? traceId : "";
         this.attempts = attempts;
     }
@@ -35,14 +37,14 @@ public class VerifyOutput {
      * Creates a copy with updated attempts count.
      */
     VerifyOutput withAttempts(int attempts) {
-        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, this.traceId, attempts);
+        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, this.edgeToken, this.traceId, attempts);
     }
 
     /**
      * Creates a copy with updated traceId.
      */
     VerifyOutput withTraceId(String traceId) {
-        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, traceId, this.attempts);
+        return new VerifyOutput(this.success, this.code, this.origin, this.timestamp, this.edgeToken, traceId, this.attempts);
     }
 
     /**
@@ -89,6 +91,15 @@ public class VerifyOutput {
      */
     public String getTimestamp() {
         return timestamp;
+    }
+
+    /**
+     * Returns the signed edge token.
+     *
+     * @return the signed edge token
+     */
+    public String getEdgeToken() {
+        return edgeToken;
     }
 
     /**

@@ -223,6 +223,7 @@ public class PrivateCaptchaClientTest {
         assertEquals("property-test", VerifyCode.TEST_PROPERTY.getErrorString());
         assertEquals("integrity-error", VerifyCode.INTEGRITY.getErrorString());
         assertEquals("org-scope-error", VerifyCode.ORG_SCOPE.getErrorString());
+        assertEquals("solution-timing", VerifyCode.SOLUTION_TIMING.getErrorString());
     }
 
     @Test
@@ -237,7 +238,7 @@ public class PrivateCaptchaClientTest {
         assertEquals("", output.getTraceId());
         assertEquals(0, output.getAttempts());
 
-        VerifyOutput successOutput = new VerifyOutput(true, VerifyCode.NO_ERROR, "origin", "timestamp", "trace", 1);
+        VerifyOutput successOutput = new VerifyOutput(true, VerifyCode.NO_ERROR, "origin", "timestamp", "edge_token", "trace", 1);
         assertTrue(successOutput.ok());
         assertTrue(successOutput.isSuccess());
         assertEquals("origin", successOutput.getOrigin());
@@ -245,7 +246,7 @@ public class PrivateCaptchaClientTest {
         assertEquals("trace", successOutput.getTraceId());
         assertEquals(1, successOutput.getAttempts());
 
-        VerifyOutput testPropertyOutput = new VerifyOutput(true, VerifyCode.TEST_PROPERTY, "", "", "", 0);
+        VerifyOutput testPropertyOutput = new VerifyOutput(true, VerifyCode.TEST_PROPERTY, "", "", "", "", 0);
         assertFalse(testPropertyOutput.ok());
         assertEquals("property-test", testPropertyOutput.getErrorMessage());
     }
