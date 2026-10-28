@@ -17,7 +17,7 @@ public class VerifyOutput {
      * Creates a new VerifyOutput with default values (for error cases).
      */
     VerifyOutput() {
-        this(false, VerifyCode.NO_ERROR, "", "", "", 0);
+        this(false, VerifyCode.NO_ERROR, "", "", "", "", 0);
     }
 
     /**
