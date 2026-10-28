@@ -28,7 +28,7 @@ public class VerifyOutput {
         this.code = code;
         this.origin = origin != null ? origin : "";
         this.timestamp = timestamp != null ? timestamp : "";
-        this.edgeToken = edgeToken != null ? edgeToken : "",
+        this.edgeToken = edgeToken != null ? edgeToken : "";
         this.traceId = traceId != null ? traceId : "";
         this.attempts = attempts;
     }
