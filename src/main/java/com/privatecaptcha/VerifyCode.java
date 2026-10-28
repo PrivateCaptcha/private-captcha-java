@@ -16,7 +16,7 @@ public enum VerifyCode {
     MAINTENANCE_MODE(9, "maintenance-mode"),
     TEST_PROPERTY(10, "property-test"),
     INTEGRITY(11, "integrity-error"),
-    ORG_SCOPE(12, "org-scope-error");
+    ORG_SCOPE(12, "org-scope-error"),
     SOLUTION_TIMING(13, "solution-timing");
 
     private final int code;
